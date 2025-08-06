@@ -77,7 +77,8 @@ class GridModelsProvider:
             return self.cached_models
             
         try:
-            async with aiohttp.ClientSession() as session:
+            timeout = aiohttp.ClientTimeout(total=10)  # 10 second timeout
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(GRID_MODELS_ENDPOINT, headers=self.headers) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -101,6 +102,9 @@ class GridModelsProvider:
                         logger.error(f"Failed to fetch Grid models: {response.status}")
                         return self.cached_models  # Return cached if available
                         
+        except asyncio.TimeoutError:
+            logger.error("Timeout fetching Grid models - API took too long to respond")
+            return self.cached_models  # Return cached if available
         except Exception as e:
             logger.error(f"Error fetching Grid models: {e}")
             import traceback
@@ -110,7 +114,8 @@ class GridModelsProvider:
     async def get_workers(self) -> List[GridWorker]:
         """Get available workers from Grid API"""
         try:
-            async with aiohttp.ClientSession() as session:
+            timeout = aiohttp.ClientTimeout(total=10)  # 10 second timeout
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(GRID_WORKERS_ENDPOINT, headers=self.headers) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -133,9 +138,47 @@ class GridModelsProvider:
                         logger.error(f"Failed to fetch Grid workers: {response.status}")
                         return []
                         
+        except asyncio.TimeoutError:
+            logger.error("Timeout fetching Grid workers - API took too long to respond")
+            return []
         except Exception as e:
             logger.error(f"Error fetching Grid workers: {e}")
             return []
+
+def parse_grid_response_for_code_interpreter(response_text: str) -> str:
+    """Parse Grid response and convert code_interpreter tags to proper format"""
+    import re
+    
+    # Pattern to match <code_interpreter> blocks
+    pattern = r'<code_interpreter[^>]*>(.*?)</code_interpreter>'
+    
+    def replace_code_block(match):
+        code_content = match.group(1).strip()
+        # Convert to proper code block format that Open WebUI can process
+        return f'\n```python\n{code_content}\n```\n'
+    
+    # Replace all code_interpreter blocks with proper code blocks
+    processed_text = re.sub(pattern, replace_code_block, response_text, flags=re.DOTALL)
+    
+    return processed_text
+
+def parse_grid_response_for_thinking(response_text: str) -> str:
+    """Parse Grid response and convert thinking tags to proper format"""
+    import re
+    
+    # Pattern to match <think> blocks
+    pattern = r'<think>(.*?)</think>'
+    
+    def replace_thinking_block(match):
+        thinking_content = match.group(1).strip()
+        # Convert to proper thinking format that Open WebUI can process
+        # Open WebUI expects thinking content to be in the response for processing
+        return f'\n<think>\n{thinking_content}\n</think>\n'
+    
+    # Replace all thinking blocks with proper format
+    processed_text = re.sub(pattern, replace_thinking_block, response_text, flags=re.DOTALL)
+    
+    return processed_text
 
 def convert_messages_to_prompt(messages: List[dict]) -> str:
     """Convert conversation messages to a prompt format for Grid API"""
@@ -143,7 +186,15 @@ def convert_messages_to_prompt(messages: List[dict]) -> str:
         logger.warning("Empty messages list provided to convert_messages_to_prompt")
         return ""
     
-    conversation_prompt = ""
+    # Add system instruction to avoid interactive code and use proper code interpreter format
+    system_instruction = """IMPORTANT: When writing Python code, NEVER use input(), raw_input(), or any functions that require user interaction. This code runs in a browser environment without stdin support. Use hardcoded values, variables, or print statements instead. If you need to demonstrate input functionality, use example values or comments.
+
+When asked to write code, ALWAYS use the code interpreter format: <code_interpreter type="code" lang="python">your code here</code_interpreter>
+
+This ensures the code will be executed properly in the browser environment."""
+    
+    conversation_prompt = f"System: {system_instruction}\n\n"
+    
     for i, msg in enumerate(messages):
         role = msg.get("role", "")
         content = msg.get("content", "")
@@ -308,6 +359,10 @@ async def grid_chat_completion(request: Request):
                                 if generations:
                                     generated_text = generations[0].get("text", "")
                                     
+                                    # Parse the response to convert code_interpreter tags to proper format
+                                    processed_text = parse_grid_response_for_code_interpreter(generated_text)
+                                    processed_text = parse_grid_response_for_thinking(processed_text)
+                                    
                                     # Return in OpenAI-compatible format
                                     return {
                                         "id": f"grid_{request_id}",
@@ -318,7 +373,7 @@ async def grid_chat_completion(request: Request):
                                             "index": 0,
                                             "message": {
                                                 "role": "assistant",
-                                                "content": generated_text
+                                                "content": processed_text
                                             },
                                             "finish_reason": "stop"
                                         }],
@@ -419,6 +474,10 @@ async def grid_chat_completion_from_form_data(form_data: dict):
                                 if generations:
                                     generated_text = generations[0].get("text", "")
                                     
+                                    # Parse the response to convert code_interpreter tags to proper format
+                                    processed_text = parse_grid_response_for_code_interpreter(generated_text)
+                                    processed_text = parse_grid_response_for_thinking(processed_text)
+                                    
                                     # Return in OpenAI-compatible format
                                     return {
                                         "id": f"grid_{request_id}",
@@ -429,7 +488,7 @@ async def grid_chat_completion_from_form_data(form_data: dict):
                                             "index": 0,
                                             "message": {
                                                 "role": "assistant",
-                                                "content": generated_text
+                                                "content": processed_text
                                             },
                                             "finish_reason": "stop"
                                         }],
@@ -478,19 +537,19 @@ async def grid_chat_completion_from_form_data(form_data: dict):
             prompt=user_message,
             params={
                 "max_length": min(max_tokens, 1024),  # Cap at 1024 for optimal performance
-                "temperature": temperature,
-                "top_p": top_p,
-                "top_k": 40,
-                "rep_pen": 1.1,
+            "temperature": temperature,
+            "top_p": top_p,
+            "top_k": 40,
+            "rep_pen": 1.1,
                 "rep_pen_range": 256,
-                "rep_pen_slope": 0.7,
-                "tfs": 1,
-                "top_a": 0,
-                "typical": 1,
-                "singleline": False,
-                "frmttriminc": True,
-                "frmtrmblln": False,
-                "stop_sequence": ["You:", "Human:", "Assistant:", "###"]
+            "rep_pen_slope": 0.7,
+            "tfs": 1,
+            "top_a": 0,
+            "typical": 1,
+            "singleline": False,
+            "frmttriminc": True,
+            "frmtrmblln": False,
+            "stop_sequence": ["You:", "Human:", "Assistant:", "###"]
             },
             models=[model_name.replace("grid_", "")],  # Remove grid_ prefix
             trusted_workers=False,
@@ -531,6 +590,10 @@ async def grid_chat_completion_from_form_data(form_data: dict):
                                 if generations:
                                     generated_text = generations[0].get("text", "")
                                     
+                                    # Parse the response to convert code_interpreter tags to proper format
+                                    processed_text = parse_grid_response_for_code_interpreter(generated_text)
+                                    processed_text = parse_grid_response_for_thinking(processed_text)
+                                    
                                     # Return in OpenAI-compatible format
                                     return {
                                         "id": f"grid_{request_id}",
@@ -541,7 +604,7 @@ async def grid_chat_completion_from_form_data(form_data: dict):
                                             "index": 0,
                                             "message": {
                                                 "role": "assistant",
-                                                "content": generated_text
+                                                "content": processed_text
                                             },
                                             "finish_reason": "stop"
                                         }],

@@ -25,6 +25,10 @@ services:
     environment:
       - 'OLLAMA_BASE_URL=http://ollama:11434'
       - 'WEBUI_SECRET_KEY='
+      - 'WEBUI_AUTH=False'
+      - 'ENABLE_SIGNUP=False'
+      - 'ENABLE_LOGIN_FORM=False'
+      - 'ENABLE_THINKING=True'
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped
