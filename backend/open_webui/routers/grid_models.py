@@ -137,6 +137,34 @@ class GridModelsProvider:
             logger.error(f"Error fetching Grid workers: {e}")
             return []
 
+def convert_messages_to_prompt(messages: List[dict]) -> str:
+    """Convert conversation messages to a prompt format for Grid API"""
+    if not messages:
+        logger.warning("Empty messages list provided to convert_messages_to_prompt")
+        return ""
+    
+    conversation_prompt = ""
+    for i, msg in enumerate(messages):
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+        
+        # Skip empty messages
+        if not content or not content.strip():
+            logger.warning(f"Empty content in message {i} with role '{role}'")
+            continue
+            
+        if role == "user":
+            conversation_prompt += f"Human: {content}\n"
+        elif role == "assistant":
+            conversation_prompt += f"Assistant: {content}\n"
+        elif role == "system":
+            conversation_prompt += f"System: {content}\n"
+        else:
+            logger.warning(f"Unknown role '{role}' in message {i}")
+    
+    logger.debug(f"Converted {len(messages)} messages to prompt: {conversation_prompt[:100]}...")
+    return conversation_prompt
+
 # Global provider instance
 grid_provider = GridModelsProvider()
 
@@ -216,19 +244,15 @@ async def grid_chat_completion(request: Request):
         temperature = body.get("temperature", 0.7)
         top_p = body.get("top_p", 0.9)
         
-        # Get the last user message
-        user_message = ""
-        for msg in reversed(messages):
-            if msg.get("role") == "user":
-                user_message = msg.get("content", "")
-                break
+        # Convert conversation history to prompt format
+        conversation_prompt = convert_messages_to_prompt(messages)
         
-        if not user_message:
+        if not conversation_prompt.strip():
             raise HTTPException(status_code=400, detail="No user message found")
         
         # Prepare Grid generation request
         grid_request = GridGenerationRequest(
-            prompt=user_message,
+            prompt=conversation_prompt,
             params={
                 "max_length": min(max_tokens, 1024),  # Cap at 1024 for optimal performance
                 "temperature": temperature,
@@ -299,9 +323,9 @@ async def grid_chat_completion(request: Request):
                                             "finish_reason": "stop"
                                         }],
                                         "usage": {
-                                            "prompt_tokens": len(user_message.split()),
+                                            "prompt_tokens": len(conversation_prompt.split()),
                                             "completion_tokens": len(generated_text.split()),
-                                            "total_tokens": len(user_message.split()) + len(generated_text.split())
+                                            "total_tokens": len(conversation_prompt.split()) + len(generated_text.split())
                                         }
                                     }
                                 
@@ -331,19 +355,15 @@ async def grid_chat_completion_from_form_data(form_data: dict):
         temperature = form_data.get("temperature", 0.7)
         top_p = form_data.get("top_p", 0.9)
         
-        # Get the last user message
-        user_message = ""
-        for msg in reversed(messages):
-            if msg.get("role") == "user":
-                user_message = msg.get("content", "")
-                break
+        # Convert conversation history to prompt format
+        conversation_prompt = convert_messages_to_prompt(messages)
         
-        if not user_message:
+        if not conversation_prompt.strip():
             raise HTTPException(status_code=400, detail="No user message found")
         
         # Prepare Grid generation request
         grid_request = GridGenerationRequest(
-            prompt=user_message,
+            prompt=conversation_prompt,
             params={
                 "max_length": min(max_tokens, 1024),  # Cap at 1024 for optimal performance
                 "temperature": temperature,
@@ -414,9 +434,9 @@ async def grid_chat_completion_from_form_data(form_data: dict):
                                             "finish_reason": "stop"
                                         }],
                                         "usage": {
-                                            "prompt_tokens": len(user_message.split()),
+                                            "prompt_tokens": len(conversation_prompt.split()),
                                             "completion_tokens": len(generated_text.split()),
-                                            "total_tokens": len(user_message.split()) + len(generated_text.split())
+                                            "total_tokens": len(conversation_prompt.split()) + len(generated_text.split())
                                         }
                                     }
                                 
@@ -526,9 +546,9 @@ async def grid_chat_completion_from_form_data(form_data: dict):
                                             "finish_reason": "stop"
                                         }],
                                         "usage": {
-                                            "prompt_tokens": len(user_message.split()),
+                                            "prompt_tokens": len(conversation_prompt.split()),
                                             "completion_tokens": len(generated_text.split()),
-                                            "total_tokens": len(user_message.split()) + len(generated_text.split())
+                                            "total_tokens": len(conversation_prompt.split()) + len(generated_text.split())
                                         }
                                     }
                                 break
