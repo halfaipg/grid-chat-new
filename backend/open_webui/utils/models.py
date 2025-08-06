@@ -56,6 +56,36 @@ async def fetch_openai_models(request: Request, user: UserModel = None):
     return openai_response["data"]
 
 
+async def fetch_grid_models(request: Request, user: UserModel = None):
+    """Fetch Grid models from our custom endpoint"""
+    try:
+        from open_webui.routers.grid_models import grid_provider
+        models = await grid_provider.get_models()
+        
+        grid_models = []
+        for model in models:
+            grid_models.append({
+                "id": f"grid_{model.name}",
+                "name": model.name,
+                "object": "model",
+                "created": int(time.time()),
+                "owned_by": "grid",
+                "connection_type": "remote",
+                "tags": [],
+                "meta": {
+                    "description": f"Grid model: {model.name}",
+                    "queue_length": model.queued,
+                    "eta": model.eta,
+                    "performance": model.performance,
+                    "worker_count": model.count
+                }
+            })
+        return grid_models
+    except Exception as e:
+        log.error(f"Error fetching Grid models: {e}")
+        return []
+
+
 async def get_all_base_models(request: Request, user: UserModel = None):
     openai_task = (
         fetch_openai_models(request, user)
@@ -68,12 +98,13 @@ async def get_all_base_models(request: Request, user: UserModel = None):
         else asyncio.sleep(0, result=[])
     )
     function_task = get_function_models(request)
+    grid_task = fetch_grid_models(request, user)
 
-    openai_models, ollama_models, function_models = await asyncio.gather(
-        openai_task, ollama_task, function_task
+    openai_models, ollama_models, function_models, grid_models = await asyncio.gather(
+        openai_task, ollama_task, function_task, grid_task
     )
 
-    return function_models + openai_models + ollama_models
+    return function_models + openai_models + ollama_models + grid_models
 
 
 async def get_all_models(request, refresh: bool = False, user: UserModel = None):

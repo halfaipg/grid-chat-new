@@ -35,6 +35,7 @@ from fastapi import (
     status,
     applications,
     BackgroundTasks,
+    Body,
 )
 from fastapi.openapi.docs import get_swagger_ui_html
 
@@ -85,6 +86,7 @@ from open_webui.routers import (
     tools,
     users,
     utils,
+    grid_models,
 )
 
 from open_webui.routers.retrieval import (
@@ -1176,6 +1178,7 @@ app.mount("/ws", socket_app)
 
 app.include_router(ollama.router, prefix="/ollama", tags=["ollama"])
 app.include_router(openai.router, prefix="/openai", tags=["openai"])
+app.include_router(grid_models.router, tags=["grid_models"])
 
 
 app.include_router(pipelines.router, prefix="/api/v1/pipelines", tags=["pipelines"])
@@ -1338,10 +1341,17 @@ async def embeddings(
     return await generate_embeddings(request, form_data, user)
 
 
+async def get_form_data(request: Request) -> dict:
+    """Parse JSON body from request"""
+    try:
+        return await request.json()
+    except:
+        return {}
+
 @app.post("/api/chat/completions")
 async def chat_completion(
     request: Request,
-    form_data: dict,
+    form_data: dict = Depends(get_form_data),
     user=Depends(get_verified_user),
 ):
     if not request.app.state.MODELS:
@@ -1349,23 +1359,36 @@ async def chat_completion(
 
     model_item = form_data.pop("model_item", {})
     tasks = form_data.pop("background_tasks", None)
+    
+    log.debug(f"Received model_item: {model_item}")
+    log.debug(f"Received form_data model: {form_data.get('model')}")
+    log.debug(f"Full form_data: {form_data}")
 
     metadata = {}
     try:
         if not model_item.get("direct", False):
             model_id = form_data.get("model", None)
-            if model_id not in request.app.state.MODELS:
+            
+            # Check if this is a Grid model by looking at the model_item
+            if model_item and model_item.get("owned_by") == "grid":
+                # This is a Grid model, use the model_item directly
+                model = model_item
+                model_info = None
+                # Don't set direct flag for Grid models - they should go through normal flow
+                request.state.model = model
+                log.debug(f"Grid model detected: {model}")
+            elif model_id in request.app.state.MODELS:
+                model = request.app.state.MODELS[model_id]
+                model_info = Models.get_model_by_id(model_id)
+
+                # Check if user has access to the model
+                if not BYPASS_MODEL_ACCESS_CONTROL and user.role == "user":
+                    try:
+                        check_model_access(user, model)
+                    except Exception as e:
+                        raise e
+            else:
                 raise Exception("Model not found")
-
-            model = request.app.state.MODELS[model_id]
-            model_info = Models.get_model_by_id(model_id)
-
-            # Check if user has access to the model
-            if not BYPASS_MODEL_ACCESS_CONTROL and user.role == "user":
-                try:
-                    check_model_access(user, model)
-                except Exception as e:
-                    raise e
         else:
             model = model_item
             model_info = None
