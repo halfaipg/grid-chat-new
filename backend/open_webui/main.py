@@ -1733,7 +1733,55 @@ async def get_app_latest_release_version(user=Depends(get_verified_user)):
 
 @app.get("/api/changelog")
 async def get_app_changelog():
-    return {key: CHANGELOG[key] for idx, key in enumerate(CHANGELOG) if idx < 5}
+    # Return AI Power Grid information instead of changelog
+    return {
+        "grid_overview": {
+            "title": "AI Power Grid Integration",
+            "content": "Welcome to Open WebUI with AI Power Grid! This integration brings you access to a distributed network of AI models and workers."
+        },
+        "features": {
+            "title": "Key Features", 
+            "content": "• Access to 9+ high-performance AI models\n• Distributed inference network\n• Real-time model availability\n• No API key required\n• Community-driven AI access"
+        },
+        "models": {
+            "title": "Available Models",
+            "content": "• GPT-OSS-120B (18.0 performance)\n• Llama 3.3 70B Versatile\n• Llama 4 Maverick 17B\n• DeepSeek R1 Distill 70B\n• Gemma2 9B IT\n• And more..."
+        },
+        "getting_started": {
+            "title": "Getting Started",
+            "content": "1. Select a Grid model from the model picker\n2. Start chatting with any Grid model\n3. Use code interpreter for Python execution\n4. Enjoy high-performance AI inference"
+        },
+        "learn_more": {
+            "title": "Learn More",
+            "content": "Visit https://docs.aipowergrid.io for detailed documentation, API reference, and community resources."
+        }
+    }
+
+@app.get("/api/grid-info")
+async def get_grid_info():
+    """Return AI Power Grid information for the changelog modal"""
+    return {
+        "grid_overview": {
+            "title": "AI Power Grid Integration",
+            "content": "Welcome to Open WebUI with AI Power Grid! This integration brings you access to a distributed network of AI models and workers."
+        },
+        "features": {
+            "title": "Key Features",
+            "content": "• Access to 9+ high-performance AI models\n• Distributed inference network\n• Real-time model availability\n• No API key required\n• Community-driven AI access"
+        },
+        "models": {
+            "title": "Available Models",
+            "content": "• GPT-OSS-120B (18.0 performance)\n• Llama 3.3 70B Versatile\n• Llama 4 Maverick 17B\n• DeepSeek R1 Distill 70B\n• Gemma2 9B IT\n• And more..."
+        },
+        "getting_started": {
+            "title": "Getting Started",
+            "content": "1. Select a Grid model from the model picker\n2. Start chatting with any Grid model\n3. Use code interpreter for Python execution\n4. Enjoy high-performance AI inference"
+        },
+        "learn_more": {
+            "title": "Learn More",
+            "content": "Visit https://docs.aipowergrid.io for detailed documentation, API reference, and community resources."
+        }
+    }
 
 
 @app.get("/api/usage")
